@@ -142,6 +142,55 @@ The TOTP feature adds two new columns to the `user` table:
 - `totp_secret` (VARCHAR(255)): Encrypted TOTP secret key
 - `totp_enabled` (BOOL): Whether TOTP is enabled for the user
 
+### Database Migration
+
+**Important:** The database migration runs automatically when you upgrade Navidrome. No manual intervention is required.
+
+#### How It Works
+
+When you start Navidrome after upgrading to a version with TOTP support:
+
+1. Navidrome automatically detects pending migrations on startup
+2. The migration `20260101213142_add_totp_fields.sql` is applied automatically
+3. The new `totp_secret` and `totp_enabled` columns are added to the `user` table
+4. Existing users are unaffected - both fields default to empty/false
+5. You'll see a log message: `"Upgrading DB Schema to latest version"`
+
+#### Migration File Location
+
+The migration file is located at:
+```
+db/migrations/20260101213142_add_totp_fields.sql
+```
+
+#### Manual Migration (Advanced)
+
+If you need to manually verify or run migrations, you can use the `goose` tool:
+
+```bash
+# Check migration status
+goose -dir db/migrations sqlite3 /path/to/navidrome.db status
+
+# Apply pending migrations
+goose -dir db/migrations sqlite3 /path/to/navidrome.db up
+
+# Rollback the TOTP migration (if needed)
+goose -dir db/migrations sqlite3 /path/to/navidrome.db down
+```
+
+**Note:** Manual migration management is rarely needed as Navidrome handles this automatically. Only use these commands if you're troubleshooting or have specific requirements.
+
+#### Backup Recommendation
+
+Before upgrading to a version with database schema changes, it's recommended to:
+
+1. Stop Navidrome
+2. Backup your database file (usually `navidrome.db`)
+3. Start the upgraded Navidrome version
+4. Verify everything works correctly
+
+You can find your database file location in your configuration or server logs.
+
 ## Security Considerations
 
 - TOTP secrets are stored encrypted in the database
