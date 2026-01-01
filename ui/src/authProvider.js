@@ -27,7 +27,39 @@ function storeAuthenticationInfo(authInfo) {
 }
 
 const authProvider = {
-  login: ({ username, password }) => {
+  login: ({ username, password, totpCode, tempToken }) => {
+    // If we have a tempToken, this is the TOTP verification step
+    if (tempToken && totpCode) {
+      const request = new Request(baseUrl('/auth/totp/verify'), {
+        method: 'POST',
+        body: JSON.stringify({ tempToken, code: totpCode }),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+      })
+      return fetch(request)
+        .then((response) => {
+          if (response.status < 200 || response.status >= 300) {
+            throw new Error(response.statusText)
+          }
+          return response.json()
+        })
+        .then((response) => {
+          jwtDecode(response.token) // Validate token
+          storeAuthenticationInfo(response)
+          removeHomeCache()
+          return response
+        })
+        .catch((error) => {
+          if (
+            error.message === 'Failed to fetch' ||
+            error.stack === 'TypeError: Failed to fetch'
+          ) {
+            throw new Error('errors.network_error')
+          }
+          throw new Error(error)
+        })
+    }
+
+    // Normal login flow
     let url = baseUrl('/auth/login')
     if (config.firstTime) {
       url = baseUrl('/auth/createAdmin')
@@ -45,6 +77,13 @@ const authProvider = {
         return response.json()
       })
       .then((response) => {
+        // Check if TOTP is required
+        if (response.totpRequired) {
+          // Store temporary token and signal that TOTP is needed
+          localStorage.setItem('totp-temp-token', response.tempToken)
+          throw new Error('totp_required')
+        }
+        
         jwtDecode(response.token) // Validate token
         storeAuthenticationInfo(response)
         // Avoid "going to create admin" dialog after logout/login without a refresh
