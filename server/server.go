@@ -36,10 +36,16 @@ type Server struct {
 	appRoot  string
 	broker   events.Broker
 	insights metrics.Insights
+	totpSvc  auth.TOTPService
 }
 
 func New(ds model.DataStore, broker events.Broker, insights metrics.Insights) *Server {
-	s := &Server{ds: ds, broker: broker, insights: insights}
+	s := &Server{
+		ds:       ds,
+		broker:   broker,
+		insights: insights,
+		totpSvc:  auth.NewTOTPService(),
+	}
 	initialSetup(ds)
 	auth.Init(s.ds)
 	s.initRoutes()
@@ -213,10 +219,12 @@ func (s *Server) mountAuthenticationRoutes() chi.Router {
 
 			rateLimiter := httprate.LimitByIP(conf.Server.AuthRequestLimit, conf.Server.AuthWindowLength)
 			r.With(rateLimiter).Post("/login", login(s.ds))
+			r.With(rateLimiter).Post("/totp/verify", verifyTOTP(s.ds, s.totpSvc))
 		} else {
 			log.Warn("Login rate limit is disabled! Consider enabling it to be protected against brute-force attacks")
 
 			r.Post("/login", login(s.ds))
+			r.Post("/totp/verify", verifyTOTP(s.ds, s.totpSvc))
 		}
 		r.Post("/createAdmin", createAdmin(s.ds))
 	})

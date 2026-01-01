@@ -58,6 +58,31 @@ func doLogin(ds model.DataStore, username string, password string, w http.Respon
 		return
 	}
 
+	// Check if user has TOTP enabled
+	if user.TOTPEnabled {
+		// Create a temporary token for TOTP verification
+		tempToken, err := auth.CreateExpiringPublicToken(
+			time.Now().Add(5*time.Minute),
+			map[string]any{
+				"username":    user.UserName,
+				"uid":         user.ID,
+				"totp_pending": true,
+			},
+		)
+		if err != nil {
+			_ = rest.RespondWithError(w, http.StatusInternalServerError, "Unknown error authenticating user. Please try again")
+			return
+		}
+
+		// Return response indicating TOTP is required
+		payload := map[string]interface{}{
+			"totpRequired": true,
+			"tempToken":    tempToken,
+		}
+		_ = rest.RespondWithJSON(w, http.StatusOK, payload)
+		return
+	}
+
 	tokenString, err := auth.CreateToken(user)
 	if err != nil {
 		_ = rest.RespondWithError(w, http.StatusInternalServerError, "Unknown error authenticating user. Please try again")
@@ -105,6 +130,75 @@ func getCredentialsFromBody(r *http.Request) (username string, password string, 
 	username = data["username"]
 	password = data["password"]
 	return username, password, nil
+}
+
+func verifyTOTP(ds model.DataStore, totpSvc auth.TOTPService) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var data struct {
+			TempToken string `json:"tempToken"`
+			Code      string `json:"code"`
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		if err := decoder.Decode(&data); err != nil {
+			log.Error(r, "parsing request body", err)
+			_ = rest.RespondWithError(w, http.StatusUnprocessableEntity, "Invalid request payload")
+			return
+		}
+
+		// Validate the temporary token
+		claims, err := auth.Validate(data.TempToken)
+		if err != nil {
+			log.Warn(r, "Invalid temporary token", err)
+			_ = rest.RespondWithError(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+
+		// Check if this is a TOTP pending token
+		totpPending, ok := claims["totp_pending"].(bool)
+		if !ok || !totpPending {
+			_ = rest.RespondWithError(w, http.StatusUnauthorized, "Invalid token type")
+			return
+		}
+
+		// Get user from token
+		username, ok := claims["username"].(string)
+		if !ok {
+			_ = rest.RespondWithError(w, http.StatusUnauthorized, "Invalid token")
+			return
+		}
+
+		user, err := ds.User(r.Context()).FindByUsernameWithPassword(username)
+		if err != nil || user == nil {
+			log.Error(r, "User not found during TOTP verification", "username", username, err)
+			_ = rest.RespondWithError(w, http.StatusUnauthorized, "Authentication failed")
+			return
+		}
+
+		// Verify TOTP code
+		if !totpSvc.ValidateCode(r.Context(), user.TOTPSecret, data.Code) {
+			log.Warn(r, "Invalid TOTP code", "username", username)
+			_ = rest.RespondWithError(w, http.StatusUnauthorized, "Invalid verification code")
+			return
+		}
+
+		// Update last login
+		err = ds.User(r.Context()).UpdateLastLoginAt(user.ID)
+		if err != nil {
+			log.Error(r, "Could not update LastLoginAt", "user", username, err)
+		}
+
+		// Create final authentication token
+		tokenString, err := auth.CreateToken(user)
+		if err != nil {
+			_ = rest.RespondWithError(w, http.StatusInternalServerError, "Unknown error authenticating user. Please try again")
+			return
+		}
+
+		payload := buildAuthPayload(user)
+		payload["token"] = tokenString
+		_ = rest.RespondWithJSON(w, http.StatusOK, payload)
+	}
 }
 
 func createAdmin(ds model.DataStore) func(w http.ResponseWriter, r *http.Request) {
