@@ -216,6 +216,115 @@ You can find your database file location in your configuration or server logs.
 - QR codes generated as base64-encoded PNG images
 - Migration: `db/migrations/20260101213142_add_totp_fields.sql`
 
+#### Detailed Code Breakdown: `core/auth/totp.go`
+
+**Package and Imports (Lines 1-14)**
+```go
+package auth
+```
+- Part of the `auth` package which handles authentication logic
+
+**Imports:**
+- `bytes` - For buffering QR code image data
+- `context` - For passing request context through function calls
+- `encoding/base64` - To encode QR code images as base64 strings
+- `errors` - For creating custom error types
+- `image/png` - For encoding QR codes as PNG images
+- `github.com/navidrome/navidrome/log` - Application logging
+- `github.com/navidrome/navidrome/model` - Data models (User struct)
+- `github.com/pquerna/otp` - OTP library for key generation
+- `github.com/pquerna/otp/totp` - TOTP-specific functionality
+
+**Error Definitions (Lines 16-18)**
+```go
+var (
+    ErrInvalidTOTPCode = errors.New("invalid TOTP code")
+)
+```
+- Defines a custom error for invalid TOTP codes
+- Can be checked with `errors.Is()` for specific error handling
+
+**Service Interface (Lines 20-24)**
+```go
+type TOTPService interface {
+    GenerateSecret(ctx context.Context, user *model.User) (string, string, error)
+    ValidateCode(ctx context.Context, secret string, code string) bool
+    GenerateQRCode(ctx context.Context, user *model.User, secret string) (string, error)
+}
+```
+- Defines the contract for TOTP operations
+- `GenerateSecret` - Returns (secret, URL, error) for TOTP setup
+- `ValidateCode` - Returns bool indicating if the provided code is valid
+- `GenerateQRCode` - Returns base64-encoded QR code image or error
+
+**Service Implementation (Lines 26-30)**
+```go
+type totpService struct{}
+
+func NewTOTPService() TOTPService {
+    return &totpService{}
+}
+```
+- `totpService` is a stateless implementation of `TOTPService`
+- `NewTOTPService` is the constructor function used for dependency injection
+- Returns interface type to allow future alternative implementations
+
+**GenerateSecret Method (Lines 32-44)**
+```go
+func (s *totpService) GenerateSecret(ctx context.Context, user *model.User) (string, string, error)
+```
+Line-by-line breakdown:
+- **Line 33**: Function declaration accepting context and user
+- **Line 34-37**: Call `totp.Generate()` with configuration:
+  - `Issuer: "Navidrome"` - Shows as issuer in authenticator apps
+  - `AccountName: user.UserName` - Shows username in authenticator apps
+- **Line 38-41**: Error handling - logs failure with user context and returns error
+- **Line 43**: Returns three values:
+  - `key.Secret()` - The base32-encoded secret string to store in database
+  - `key.URL()` - The `otpauth://` URL for QR code generation
+  - `nil` - No error occurred
+
+**ValidateCode Method (Lines 46-53)**
+```go
+func (s *totpService) ValidateCode(ctx context.Context, secret string, code string) bool
+```
+Line-by-line breakdown:
+- **Line 47**: Function declaration accepting context, secret, and user-provided code
+- **Line 48**: Call `totp.Validate()` to verify the code against the secret
+  - Uses current time window (±1 period for clock skew tolerance)
+  - Returns boolean indicating validity
+- **Line 49-51**: If invalid, log a warning (helps detect brute force attempts)
+- **Line 52**: Return the validation result
+
+**GenerateQRCode Method (Lines 55-81)**
+```go
+func (s *totpService) GenerateQRCode(ctx context.Context, user *model.User, secret string) (string, error)
+```
+Line-by-line breakdown:
+- **Line 56**: Function declaration accepting context, user, and secret URL
+- **Line 57-61**: Parse the `otpauth://` URL into a Key object
+  - **Line 57**: Call `otp.NewKeyFromURL()` to parse the URL
+  - **Line 58-60**: Error handling with logging
+- **Line 64-68**: Generate QR code image
+  - **Line 64**: Call `key.Image(200, 200)` to create 200x200 pixel QR code
+  - **Line 65-67**: Error handling with logging
+- **Line 71-76**: Encode QR code as PNG
+  - **Line 71**: Create a buffer to hold PNG data
+  - **Line 72**: Encode the image as PNG into the buffer
+  - **Line 73-75**: Error handling with logging
+- **Line 79-80**: Convert to base64 data URL
+  - **Line 79**: Encode buffer bytes to base64 string
+  - **Line 80**: Prepend `data:image/png;base64,` prefix for direct browser use
+  - Returns the complete data URL that can be used in `<img>` tags
+
+**Key Design Decisions:**
+1. **Stateless Service** - No internal state, all data passed as parameters
+2. **Context Propagation** - All methods accept context for cancellation and logging
+3. **Error Logging** - All errors logged with context before returning
+4. **Base64 Data URLs** - QR codes returned as data URLs for easy frontend integration
+5. **Standard Compliance** - Uses RFC 6238 compliant TOTP implementation
+6. **Time Window** - Default 30-second time window with ±1 period skew tolerance
+
 ### Frontend
 
 - Setup dialog: `ui/src/dialogs/TOTPSetupDialog.jsx`
