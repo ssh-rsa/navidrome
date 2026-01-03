@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { useTranslate, useNotify, useDataProvider, useRefresh } from 'react-admin'
+import { useTranslate, useNotify, useRefresh } from 'react-admin'
 import { Box, Button, Typography, Chip } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import SecurityIcon from '@material-ui/icons/Security'
 import TOTPSetupDialog from '../dialogs/TOTPSetupDialog'
+import { httpClient } from '../dataProvider'
 
 const useStyles = makeStyles((theme) => ({
   container: {
@@ -18,7 +19,6 @@ const useStyles = makeStyles((theme) => ({
 export const TOTPField = ({ record, userId }) => {
   const translate = useTranslate()
   const notify = useNotify()
-  const dataProvider = useDataProvider()
   const refresh = useRefresh()
   const classes = useStyles()
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
@@ -33,7 +33,10 @@ export const TOTPField = ({ record, userId }) => {
 
     setLoading(true)
     try {
-      await dataProvider.create(`user/${userId}/totp/disable`, { data: {} })
+      await httpClient(`/api/user/${userId}/totp/disable`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
       notify(translate('resources.user.notifications.totpDisabled'), 'success')
       refresh()
     } catch (err) {

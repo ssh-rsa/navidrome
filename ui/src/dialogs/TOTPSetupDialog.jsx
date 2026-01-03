@@ -10,13 +10,13 @@ import {
   Typography,
   CircularProgress,
 } from '@material-ui/core'
-import { useTranslate, useNotify, useDataProvider } from 'react-admin'
+import { useTranslate, useNotify } from 'react-admin'
 import { DialogTitle } from './DialogTitle'
+import { httpClient } from '../dataProvider'
 
 const TOTPSetupDialog = ({ open, onClose, userId, onSuccess }) => {
   const translate = useTranslate()
   const notify = useNotify()
-  const dataProvider = useDataProvider()
   const [step, setStep] = useState(1) // 1: Generate QR, 2: Verify code
   const [qrCode, setQrCode] = useState('')
   const [secret, setSecret] = useState('')
@@ -28,15 +28,16 @@ const TOTPSetupDialog = ({ open, onClose, userId, onSuccess }) => {
     setLoading(true)
     setError('')
     try {
-      const response = await dataProvider.create(`user/${userId}/totp/setup`, {
-        data: {},
+      const response = await httpClient(`/api/user/${userId}/totp/setup`, {
+        method: 'POST',
+        body: JSON.stringify({}),
       })
-      setSecret(response.data.secret)
-      setQrCode(response.data.qrCode)
+      setSecret(response.json.secret)
+      setQrCode(response.json.qrCode)
       setStep(2)
     } catch (err) {
       notify(translate('resources.user.notifications.totpSetupFailed'), 'error')
-      setError(err.message)
+      setError(err.message || err.body?.error || 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -51,11 +52,12 @@ const TOTPSetupDialog = ({ open, onClose, userId, onSuccess }) => {
     setLoading(true)
     setError('')
     try {
-      await dataProvider.create(`user/${userId}/totp/enable`, {
-        data: {
+      await httpClient(`/api/user/${userId}/totp/enable`, {
+        method: 'POST',
+        body: JSON.stringify({
           secret: secret,
           code: code,
-        },
+        }),
       })
       notify(translate('resources.user.notifications.totpEnabled'), 'success')
       onSuccess && onSuccess()
