@@ -21,6 +21,7 @@ import {
 import Logo from '../icons/android-icon-192x192.png'
 
 import Notification from './Notification'
+import { TOTPVerifyForm } from './TOTPVerifyForm'
 import useCurrentTheme from '../themes/useCurrentTheme'
 import config from '../config'
 import { clearQueue } from '../actions'
@@ -314,10 +315,21 @@ const FormSignUp = ({ loading, handleSubmit, validate }) => {
 
 const Login = ({ location }) => {
   const [loading, setLoading] = useState(false)
+  const [totpRequired, setTotpRequired] = useState(false)
+  const [tempToken, setTempToken] = useState(null)
   const translate = useTranslate()
   const notify = useNotify()
   const login = useLogin()
   const dispatch = useDispatch()
+
+  // Check if there's a pending TOTP verification
+  useEffect(() => {
+    const storedTempToken = localStorage.getItem('totp-temp-token')
+    if (storedTempToken) {
+      setTempToken(storedTempToken)
+      setTotpRequired(true)
+    }
+  }, [])
 
   const handleSubmit = useCallback(
     (auth) => {
@@ -326,6 +338,13 @@ const Login = ({ location }) => {
       login(auth, location.state ? location.state.nextPathname : '/').catch(
         (error) => {
           setLoading(false)
+          // Check if TOTP is required
+          if (error.message === 'totp_required') {
+            const storedTempToken = localStorage.getItem('totp-temp-token')
+            setTempToken(storedTempToken)
+            setTotpRequired(true)
+            return
+          }
           notify(
             typeof error === 'string'
               ? error
@@ -381,6 +400,11 @@ const Login = ({ location }) => {
       />
     )
   }
+  
+  if (totpRequired && tempToken) {
+    return <TOTPVerifyForm location={location} tempToken={tempToken} />
+  }
+  
   return (
     <FormLogin
       handleSubmit={handleSubmit}

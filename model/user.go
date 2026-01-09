@@ -18,6 +18,10 @@ type User struct {
 	// Library associations (many-to-many relationship)
 	Libraries Libraries `structs:"-" json:"libraries,omitempty"`
 
+	// TOTP (Two-Factor Authentication) fields
+	TOTPSecret  string `structs:"totp_secret" json:"-"`
+	TOTPEnabled bool   `structs:"totp_enabled" json:"totpEnabled"`
+
 	// This is only available on the backend, and it is never sent over the wire
 	Password string `structs:"-" json:"-"`
 	// This is used to set or change a password when calling Put. If it is empty, the password is not changed.

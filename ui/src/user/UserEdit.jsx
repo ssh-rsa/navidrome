@@ -24,6 +24,7 @@ import { Typography } from '@material-ui/core'
 import { Title } from '../common'
 import DeleteUserButton from './DeleteUserButton'
 import { LibrarySelectionField } from './LibrarySelectionField.jsx'
+import { TOTPField } from './TOTPField.jsx'
 import { validateUserForm } from './userValidation'
 
 const useStyles = makeStyles({
@@ -175,6 +176,11 @@ const UserEdit = (props) => {
         <DateField variant="body1" source="lastAccessAt" showTime />
         <DateField variant="body1" source="updatedAt" showTime />
         <DateField variant="body1" source="createdAt" showTime />
+
+        {/* TOTP Two-Factor Authentication */}
+        <FormDataConsumer>
+          {({ formData }) => <TOTPField record={formData} userId={props.id} />}
+        </FormDataConsumer>
       </SimpleForm>
     </Edit>
   )
